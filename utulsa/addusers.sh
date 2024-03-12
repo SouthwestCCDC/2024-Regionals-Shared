@@ -28,7 +28,6 @@ userpassword: $password
 EOF
 
 echo "$userName has been added"
-
-((uid+=1))
 echo $uid
+((uid+=1))
 done < usernamefirstlasttitlegroupspa.txt
