@@ -31,6 +31,8 @@ elif command -v yum >/dev/null 2>&1; then
 	yum install auditd
     yum install neofetch
 else
+    #may or may not work so uncomment the line if this comes up 
+    #cat /etc/os-release
     echo "Unknown package manager"
 fi
 
