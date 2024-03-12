@@ -1,0 +1,29 @@
+Write-output "Processes:"
+$processList = Get-CimInstance Win32_Process
+foreach ($process in $processList) {
+    $portList = Get-NetTCPConnection -OwningProcess $process.ProcessId -ErrorAction SilentlyContinue |
+        Select-Object LocalAddress,LocalPort,RemoteAddress,RemotePort
+    if ($portList) {
+        if ($process.ProcessName -eq 'svchost.exe') {
+            $service = Get-WmiObject -Class Win32_Service -Filter "ProcessID=$($process.ProcessId)" | Select-Object -Property Name 
+            Write-Output "$($process.ProcessName) ($($process.ProcessId)) - $($service.Name)"
+            Write-Output "↪ $($process.CommandLine)"
+            foreach( $port in $portList){
+                if($port.LocalAddress -ne "::1" -and $port.LocalAddress -ne "127.0.0.1"){ 
+                    Write-Output "  ↪ $($port.LocalAddress):$($port.LocalPort) - $($port.RemoteAddress):$($port.RemotePort)"
+                }
+            }
+        }
+        else {
+            $service = Get-WmiObject -Class Win32_Service -Filter "ProcessID=$($process.ProcessId)" 
+            Write-Output "$($process.ProcessName) ($($process.ProcessId))"
+            Write-Output "↪ $($process.CommandLine)"
+            foreach( $port in $portList){
+                if($port.LocalAddress -ne "::1" -and $port.LocalAddress -ne "127.0.0.1"){ 
+                    Write-Output "  ↪ $($port.LocalAddress):$($port.LocalPort) - $($port.RemoteAddress):$($port.RemotePort)"
+                }
+            }
+        }
+        write-output ""
+    }
+}
