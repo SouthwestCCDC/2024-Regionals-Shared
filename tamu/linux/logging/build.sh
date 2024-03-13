@@ -53,6 +53,3 @@ cp perl.com ../client/
 cp lnav-0.12.0/lnav ../server/
 chmod u+x ../server/*
 chmod u+x ../client/*
-
-cp ../src/*server* ../server/
-cp ../src/*client* ../client/
