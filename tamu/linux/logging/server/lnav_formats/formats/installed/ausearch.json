@@ -1,0 +1,56 @@
+{
+    "$schema": "https://lnav.org/schemas/format-v1.schema.json",
+    "ausearch_text": {
+        "title": "Auditd ausearch output",
+        "description": "The text format output from ausearch",
+        "regex": {
+            "ausearch_text": {
+                "pattern": "At (?<timestamp>[^\\s]+\\s[^\\s]+) (?<user>\\w+)(?:, acting as (?<effective_user>\\w+),)? (?<success>\\w+) (?<action>[\\w-]+) (?<body>.*?)(?: using (?<executable>.+))?$"
+            }
+        },
+        "level-field": "success",
+        "level": {
+            "info": "^successfully$",
+            "error": "^unsuccessfully$"
+        },
+        "timestamp-format": [
+            "%H:%M:%S %m/%d/%Y"
+        ],
+        "value": {
+            "user": {
+                "kind": "string",
+                "identifier": true
+            },
+            "effective_user": {
+                "kind": "string",
+                "identifier": true
+            },
+            "action": {
+                "kind": "string",
+                "identifier": true
+            },
+            "executable": {
+                "kind": "string",
+                "identifier": true
+            }
+        },
+        "sample": [
+            {
+                "line": "At 02:42:37 04/01/1974 timmy, acting as root, successfully triggered-audit-rule network_socket_created using /bin/ascend",
+                "level": "info"
+            },
+            {
+                "line": "At 08:22:10 02/19/2013 superuser successfully executed /lib64/ld-linux-x86-64.so.2",
+                "level": "info"
+            },
+            {
+                "line": "At 08:22:10 02/19/2015 frank, acting as root, unsuccessfully opened-file using /usr/bin/cat",
+                "level": "error"
+            },
+            {
+                "line": "At 20:32:21 08/22/2017 system, acting as user, unsuccessfully authenticated user using /usr/bin/sudo",
+                "level": "error"
+            }
+        ]
+    }
+}
