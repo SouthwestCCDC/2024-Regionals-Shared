@@ -1,7 +1,7 @@
 # start service
 systemctl start auditd 
 # download rules
-wget https://raw.githubusercontent.com/SouthwestCCDC/2023-Regionals-Shared/main/latech/linux/audit.rules -O /etc/audit/rules.d/audit.rules
+wget https://raw.githubusercontent.com/SouthwestCCDC/2024-Regionals-Shared/main/latech/linux/audit.rules -O /etc/audit/rules.d/audit.rules
 # load rules
 auditctl -R /etc/audit/rules.d/audit.rules
 # confirm rule additions
