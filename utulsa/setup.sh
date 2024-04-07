@@ -35,4 +35,7 @@ if command -v apk >/dev/null 2>&1; then
     sed -i 's/#\(.*\/community\)/\1/' /etc/apk/repositories # enable community repo
     apk update
     apk add bash vim nano sudo
+
+    # extra: for gpasswd groups management
+    apk add shadow
 fi
