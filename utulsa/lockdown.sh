@@ -27,7 +27,7 @@ CURRENT_USER=$(whoami)
 echo
 header "Linux Lockdown Script"
 echo "Authors.......: TNAR5, colonket, ferdinand"
-echo "Version.......: 1.3"
+echo "Version.......: 1.4, \"Final Countdown\""
 echo "OS............: $(cat /etc/os-release | awk -F= '/PRETTY_NAME/ {print $2}')"
 echo "Executing as user: $CURRENT_USER"
 
@@ -113,7 +113,7 @@ function ssh_lockdown()
 			if [[ $REPLY =~ ^[Yy]$ ]]
 			then
 				cp -n /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
-				printf "Port 22\nPermitRootLogin prohibit-password\nListenAddress 0.0.0.0\nAuthorizedKeysFile\t.ssh/authorized_keys\nMaxAuthTries 3\nPubkeyAuthentication yes\nPasswordAuthentication yes\nPermitEmptyPasswords no\nUsePAM yes\nPrintMotd yes\nAcceptEnv LANG LC_*\nSubsystem\tsftp\tinternal-sftp" > /etc/ssh/sshd_config
+				printf "Port 22\nPermitRootLogin no\nListenAddress 0.0.0.0\nAuthorizedKeysFile\t.ssh/authorized_keys\nMaxAuthTries 3\nPubkeyAuthentication yes\nPasswordAuthentication yes\nPermitEmptyPasswords no\nUsePAM yes\nPrintMotd yes\nAcceptEnv LANG LC_*\nSubsystem\tsftp\tinternal-sftp" > /etc/ssh/sshd_config
 				echo "Restarting SSH service..."
 				service sshd restart
 			fi
@@ -143,11 +143,38 @@ function kernel_lockdown()
 	fi
 }
 
+# Hivestorm - bulk change passwords
+function bulk_pw_change()
+{
+	header "\nHivestorm - Bulk Password Change"
+	password="changeMe!123"
+	read -p "[?] HIVESTORM COMPETITION ONLY - Do you want to set every user's password to '$password'? [y/N]" -n 1 -r
+	echo
+	if [[ $REPLY =~ ^[Yy]$ ]]
+	then
+		users=($(awk -F: '$3 >= 1000 && $1 != "nobody" {print $1}' /etc/passwd))
+		for u in "${users[@]}"
+		do
+			if [[ $DISTRIBUTION == "freebsd" ]]
+			then
+				echo "$password" | pw usermod "$u" -h 0
+				success "Changed user $u's password to $password"
+			else
+				# passwd asks to enter new password twice
+				echo -e "$password\n$password" | passwd $u
+				success "Changed user $u's password to $password"
+			fi
+		done
+	fi
+
+	notify "Don't forget to change the root password manually!!!"
+}
+
 # Offline - Modify users and sudoers
 function user_lockdown()
 {
 	header "\nUser Lockdown"
-	read -p "[?] Do you want to create a c6 admin user (CCDC)? [y/N] " -n 1 -r
+	read -p "[?] CCDC COMPETITION ONLY - Do you want to create a c6 admin user? [y/N] " -n 1 -r
 	echo
 	if [[ $REPLY =~ ^[Yy]$ ]]
 	then
@@ -206,19 +233,11 @@ function user_lockdown()
 		success "Found ${#users[@]} human users."
 		echo
 
-		#password="changeMe!123"
-		#read -p "[?] HIVESTORM COMPETITION ONLY Do you want to set every users password to '$password'? [y/N]" -n 1 -r
-		#echo
-		#if [[ $REPLY =~ ^[Yy]$ ]]
-		#then
-		#	for u in "${users[@]}"
-		#	do
-		#		# passwd asks to enter new password twice
-		#		echo -e "$password\n$password" | passwd $u
-		#		success "Changed user $u's password to $password"
-		#		echo
-		#	done
-		#fi
+		notify "Check the current list of sudo/admin/wheel users and remove them from the groups if necessary:"
+		getent group sudo
+		getent group admin
+		getent group wheel
+		echo
 
 		for u in "${users[@]}"
 		do
@@ -250,6 +269,40 @@ function user_lockdown()
 						success "$u has been removed."
 					fi
 				else
+					groups "$u" | egrep "(sudo|wheel|admin)" > /dev/null
+					if [ $? -eq 0 ];
+					then
+						notify "Note: User $u IS an admin."
+		
+						read -p "[?] Remove sudo/admin permissions for user $u? [y/N]" -n 1 -r
+						echo
+						if [[ $REPLY =~ ^[Yy]$ ]]
+						then 
+							if [[ $u == "$SUDO_USER" ]]
+							then
+								error "You are $u, cannot remove yourself as sudo/admin!"
+							else
+								if [[ $DISTRIBUTION == "freebsd" ]]
+								then
+									pw groupmod sudo -d "$u"
+									pw groupmod wheel -d "$u"
+									pw groupmod admin -d "$u"
+								else
+									gpasswd -d "$u" sudo
+									gpasswd -d "$u" wheel
+									gpasswd -d "$u" admin
+								fi
+								success "Removed sudo/admin permissions for user $u."
+							fi
+						else
+							success "Did not change $u's permissions"
+						fi
+
+					else
+						notify "Note: User $u is NOT an admin."
+						# TODO - option to add to admin group if not 
+					fi
+
 					read -p "[?] CHANGE $u's password? [y/N]" -n 1 -r
 					echo
 					if [[ $REPLY =~ ^[Yy]$ ]]
@@ -346,7 +399,7 @@ function check_bad_programs()
 		"vsftpd"
 		"apache2"
 		"nginx"
-		"telnet"
+		"pure-ftpd"
 	)
 
 	# Remove bad programs
@@ -421,8 +474,7 @@ function find_media()
 	chkdir="/home/"
 	dmpfile="$HOME/media_files.txt"
 	sarray=()
-	header "Checking for media files in ${chkdir}"
-	success "Checking txt files."
+	header "\nChecking for media files in ${chkdir}"
 	echo "">$dmpfile
 	declare -a extensions=(
 		"txt"
@@ -445,7 +497,7 @@ function find_media()
 		success "Checking $i files."
 	done
 	printf "\n"
-	notify "Saving file paths to ${dmpfile}"
+	notify "Saving media file paths to ${dmpfile}"
 }
 
 # Online - Updating packages
@@ -466,21 +518,25 @@ function ask_to_install_updates()
 function enable_av()
 {
 	header "\nAnti-Virus lockdown"
-	command -v clamscan >/dev/null
-	if [ $? -eq 0 ];then
-		success "ClamAV found."
-		freshclam
-		success "Updated definitions."
-	else
-		error "ClamAV not installed."
-		read -p "[?] Would you like to install ClamAV and chkrootkit? [y/N] " -n 1 -r
-		echo
-		if [[ $REPLY =~ ^[Yy]$ ]]
-		then
-			apt-get install -y clamav chkrootkit
-			ufw enable > /dev/null
+	read -p "[?] Install anti-virus/anti-rootkit? (need to scan manually) (WARNING: SLOW) [y/N] " -n 1 -r
+	echo
+	if [[ $REPLY =~ ^[Yy]$ ]]
+	then
+		command -v clamscan >/dev/null
+		if [ $? -eq 0 ];then
+			success "ClamAV found."
 			freshclam
-			success "ClamAV is now enabled and updated."
+			success "Updated definitions."
+		else
+			error "ClamAV not installed."
+			read -p "[?] Would you like to install ClamAV and chkrootkit? [y/N] " -n 1 -r
+			echo
+			if [[ $REPLY =~ ^[Yy]$ ]]
+			then
+				apt-get install -y clamav chkrootkit
+				freshclam
+				success "ClamAV is now enabled and updated."
+			fi
 		fi
 	fi
 }
@@ -491,8 +547,8 @@ function enable_ufw()
 	header "\nFirewall Lockdown"
 	command -v ufw >/dev/null
 	if [ $? -eq 0 ];then
-		success "UFW found enabling firewall."
-		ufw enable > /dev/null
+		success "UFW found, enabling firewall."
+		ufw enable
 	else
 		error "UFW not installed."
 		read -p "[?] Would you like to install ufw? [y/N] " -n 1 -r
@@ -500,8 +556,7 @@ function enable_ufw()
 		if [[ $REPLY =~ ^[Yy]$ ]]
 		then
 			apt-get install -y ufw
-			ufw enable > /dev/null
-			success "UFW is now enabled."
+			ufw enable
 		fi
 	fi
 }
@@ -509,10 +564,10 @@ function enable_ufw()
 
 
 # Modes - Different Ways to Run this Script
-function mode_default(){
-	# sudo ./lockdown.sh
-	success "RUNNING WITH DEFAULT MODE - CCDC-compatible"
-    #choose_editor
+function mode_ccdc(){
+	# sudo ./lockdown.sh -c
+	success "RUN MODE: CCDC"
+    choose_editor
 	check_services
     ssh_lockdown
 	kernel_lockdown
@@ -521,62 +576,68 @@ function mode_default(){
 	#enable_ufw
 	#ask_to_install_updates
 }
-function mode_auto(){
-	# sudo ./lockdown.sh -a
-	success "RUN MODE: AUTOMATIC (NOT for CCDC)"
+function mode_hivestorm(){
+	# sudo ./lockdown.sh -w
+	success "RUN MODE: HIVESTORM/WILDCARD"
     readme_prompt
-	#choose_editor
-	ssh_lockdown
-	kernel_lockdown
-	#user_lockdown
-	#check_configs
-	check_bad_programs
+    choose_editor
 	check_services
+    ssh_lockdown
+	kernel_lockdown
+	bulk_pw_change
+	user_lockdown
+	check_configs
+	check_bad_programs
 	enable_ufw
-	#enable_av		# Disabled for time
+	find_media
 	ask_to_install_updates
-	#find_media 	# Disabled for CCDC
-}
-function mode_autoOffline(){
-	# sudo ./lockdown.sh -o
-	success "RUN MODE: OFFLINE (NOT for CCDC)"
-    readme_prompt
-	#choose_editor
-	ssh_lockdown
-	kernel_lockdown
-	#user_lockdown
-	#check_configs
-	check_bad_programs
-	check_services
-	#enable_ufw
-	#enable_av		# Disabled for time
-	#ask_to_install_updates
-	#find_media 	# Disabled for CCDC
 }
 function mode_userLockdown(){
 	# sudo ./lockdown.sh -u
 	success "RUN MODE: USER LOCKDOWN ONLY"
 	user_lockdown
 }
+function mode_av(){
+	# sudo ./lockdown.sh -a
+	success "RUN MODE: ANTIVIRUS ONLY"
+	enable_av
+}
+function mode_printUsage(){
+	programname=$0
+    echo "Usage: $programname [option]"
+    echo "  -c      CCDC MODE"
+    echo "  -w      WILDCARD/HIVESTORM MODE"
+    echo "  -u      User lockdown only"
+	echo "  -a      Antivirus only"
+    echo "  -h      Display help"
+    exit 1
+}
 
 case $1 in
-	"-a") 	mode_auto;;
-	"-o") 	mode_autoOffline;;
+	"-c") 	mode_ccdc;;
+	"-w") 	mode_hivestorm;;
 	"-u") 	mode_userLockdown;;
-	*)	mode_default;;
+	"-a") 	mode_av;;
+	"-h")	mode_printUsage;;
+	*)	mode_printUsage;;
 esac
 
 header "\nThings left to do:"
 notify "Secure Root - Change root password and disable if allowed!"
-notify "Update kernel"
-notify "Update the APT Package Manager Source (Settings > Software and Updates > Download From)"
+notify "Remove unauthorized users from sudo/admin group"
+notify "Ubuntu/Debian: Update the Software and Updates settings"
+notify "	(Settings > Software and Updates > Download From)"
+notify "	(Settings > Software & Updates > Updates > Install updates from important security updates)"
+notify "	(Settings > Software & Updates > Updates > Automatically check for updates: Daily)"
+notify "Update web browser and security settings - block popups, etc."
+notify "Update Linux kernel"
 notify "Pam cracklib password requirements/logging"
 notify "Discover rootkits/backdoors"
 notify "Check file permissions"
 notify "Check init scripts"
-notify "Web browser updates and security"
+notify "Delete disallowed media files"
 notify "ADD USERS NOT IN THE LIST"
-notify "Win - Good Luck! :D"
+notify "WIN - Good Luck! :D"
 
 success "Script finished exiting."
 exit 0
